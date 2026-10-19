@@ -115,6 +115,80 @@ impl<
     }
 }
 
+/// An error that occurs when constructing an [`EthLocalBlock`] from its parts.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum LocalBlockFromPartsError {
+    /// The transactions don't match the header's transactions root.
+    #[error(
+        "The transactions have root {actual}, but the header has transactions root {expected}."
+    )]
+    TransactionsRoot {
+        /// The header's transactions root.
+        expected: B256,
+        /// The root of the transactions.
+        actual: B256,
+    },
+    /// The number of receipts differs from the number of transactions.
+    #[error("The block has {transactions} transactions, but {receipts} receipts.")]
+    ReceiptCount {
+        /// The number of transactions.
+        transactions: usize,
+        /// The number of receipts.
+        receipts: usize,
+    },
+}
+
+impl<BlockReceiptT: ReceiptTrait, FetchReceiptErrorT, HardforkT, SignedTransactionT>
+    EthLocalBlock<BlockReceiptT, FetchReceiptErrorT, HardforkT, SignedTransactionT>
+where
+    SignedTransactionT: ExecutableTransaction,
+{
+    /// Constructs a block from a complete header and the block's contents,
+    /// without recomputing its receipts.
+    ///
+    /// Unlike [`EthLocalBlock::new`], which builds a new block, this restores a
+    /// block that was mined before, for example from a saved chain. The block
+    /// hash is the header's hash.
+    pub fn from_parts(
+        header: BlockHeader,
+        transactions: Vec<SignedTransactionT>,
+        transaction_receipts: Vec<Arc<BlockReceiptT>>,
+        ommers: Vec<BlockHeader>,
+        withdrawals: Option<Vec<Withdrawal>>,
+    ) -> Result<Self, LocalBlockFromPartsError> {
+        if transactions.len() != transaction_receipts.len() {
+            return Err(LocalBlockFromPartsError::ReceiptCount {
+                transactions: transactions.len(),
+                receipts: transaction_receipts.len(),
+            });
+        }
+
+        let transactions_root = ordered_trie_root_with_encoder(&transactions, |tx, buf| {
+            buf.extend_from_slice(tx.rlp_encoding());
+        });
+        if transactions_root != header.transactions_root {
+            return Err(LocalBlockFromPartsError::TransactionsRoot {
+                expected: header.transactions_root,
+                actual: transactions_root,
+            });
+        }
+
+        let ommer_hashes = ommers.iter().map(BlockHeader::hash).collect();
+        let hash = header.hash();
+
+        Ok(Self {
+            header,
+            transactions,
+            transaction_receipts,
+            ommers,
+            ommer_hashes,
+            withdrawals,
+            hash,
+            _phantom: PhantomData,
+        })
+    }
+}
+
 impl<
         BlockReceiptT: ReceiptTrait,
         FetchReceiptErrorT,

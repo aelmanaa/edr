@@ -94,6 +94,7 @@ tracing = { version = "0.1.44", features = [
 alloy-eips.workspace = true
 alloy-trie = { workspace = true, features = ["ethereum"] }
 anyhow = "1.0.100"
+edr_block_local.workspace = true
 edr_eip7825.workspace = true
 edr_eip7997.workspace = true
 edr_test_block_replay.workspace = true

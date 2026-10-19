@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod block_parts;
 mod call;
 mod gas;
 mod state_dump;
