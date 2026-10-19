@@ -14,11 +14,12 @@ use edr_block_header::BlockConfig;
 use edr_block_remote::RemoteBlock;
 use edr_block_storage::{
     InsertBlockAndReceiptsError, InsertBlockError, ReservableSparseBlockStorage,
+    ReservableSparseBlockStorageParts,
 };
 use edr_blockchain_api::{
     utils::compute_state_at_block, BlockHashByNumber, BlockchainMetadata, GetBlockchainBlock,
-    GetBlockchainLogs, InsertBlock, LocalStateDiffs, ReceiptByTransactionHash, ReserveBlocks,
-    RevertToBlock, StateAtBlock, TotalDifficultyByBlockHash,
+    GetBlockchainLogs, InsertBlock, LocalBlockParts, LocalStateDiffs, ReceiptByTransactionHash,
+    ReserveBlocks, RevertToBlock, StateAtBlock, TotalDifficultyByBlockHash,
 };
 use edr_blockchain_predeploys::predeploys_activated_between;
 use edr_blockchain_remote::{FetchRemoteBlockError, FetchRemoteReceiptError, RemoteBlockchain};
@@ -943,6 +944,34 @@ impl<
         );
 
         Ok(())
+    }
+}
+
+impl<
+        BlockReceiptT: Debug + ReceiptTrait + TryFrom<RpcReceiptT>,
+        BlockT: ?Sized + Block<SignedTransactionT>,
+        FetchReceiptErrorT,
+        HardforkT: Clone,
+        LocalBlockT: Block<SignedTransactionT>,
+        RpcBlockChainSpecT: RpcBlockChainSpec<RpcBlock<RpcTransactionT>: TryInto<EthBlockData<SignedTransactionT>>>,
+        RpcReceiptT: serde::de::DeserializeOwned + serde::Serialize,
+        RpcTransactionT: serde::de::DeserializeOwned + serde::Serialize,
+        SignedTransactionT: Debug + ExecutableTransaction,
+    > LocalBlockParts<HardforkT, LocalBlockT>
+    for ForkedBlockchain<
+        BlockReceiptT,
+        BlockT,
+        FetchReceiptErrorT,
+        HardforkT,
+        LocalBlockT,
+        RpcBlockChainSpecT,
+        RpcReceiptT,
+        RpcTransactionT,
+        SignedTransactionT,
+    >
+{
+    fn local_block_parts(&self) -> ReservableSparseBlockStorageParts<Arc<LocalBlockT>, HardforkT> {
+        self.local_storage.to_parts()
     }
 }
 

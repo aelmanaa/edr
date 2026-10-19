@@ -5,14 +5,15 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use edr_block_api::BlockAndTotalDifficulty;
 use edr_block_header::BlockConfig;
+use edr_block_storage::ReservableSparseBlockStorageParts;
 use edr_primitives::{Address, HashSet, B256, U256};
 use edr_receipt::log::FilterLog;
 use edr_state_api::{DynState, StateDiff, StateOverride};
 
 use crate::{
     BlockHashByNumber, Blockchain, BlockchainMetadata, GetBlockchainBlock, GetBlockchainLogs,
-    InsertBlock, LocalStateDiffs, ReceiptByTransactionHash, ReserveBlocks, RevertToBlock,
-    StateAtBlock, TotalDifficultyByBlockHash,
+    InsertBlock, LocalBlockParts, LocalStateDiffs, ReceiptByTransactionHash, ReserveBlocks,
+    RevertToBlock, StateAtBlock, TotalDifficultyByBlockHash,
 };
 
 /// Wrapper around `Box<dyn std::error::Error` to allow implementation of
@@ -316,6 +317,37 @@ impl<
         self.inner
             .insert_block(block, state_diff)
             .map_err(DynBlockchainError::new)
+    }
+}
+
+impl<
+        BlockReceiptT,
+        BlockT: ?Sized,
+        BlockchainErrorT: 'static + std::error::Error + Send + Sync,
+        BlockchainT: Blockchain<
+            BlockReceiptT,
+            BlockT,
+            BlockchainErrorT,
+            HardforkT,
+            LocalBlockT,
+            SignedTransactionT,
+        >,
+        HardforkT,
+        LocalBlockT,
+        SignedTransactionT,
+    > LocalBlockParts<HardforkT, LocalBlockT>
+    for DynBlockchain<
+        BlockReceiptT,
+        BlockT,
+        BlockchainErrorT,
+        BlockchainT,
+        HardforkT,
+        LocalBlockT,
+        SignedTransactionT,
+    >
+{
+    fn local_block_parts(&self) -> ReservableSparseBlockStorageParts<Arc<LocalBlockT>, HardforkT> {
+        self.inner.local_block_parts()
     }
 }
 

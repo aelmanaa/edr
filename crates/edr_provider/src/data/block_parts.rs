@@ -313,3 +313,53 @@ fn from_parts_checks_the_transactions_and_receipts() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn local_block_parts_restore_the_provider_blockchain() -> anyhow::Result<()> {
+    use edr_blockchain_api::{GetBlockchainBlock as _, StateAtBlock as _};
+    use edr_blockchain_local::{LocalBlockchain, LocalBlockchainParts};
+    use edr_state_api::StateDebug as _;
+
+    let mut fixture = fixture_with_mined_block()?;
+    // Blocks 2 and 3 are mined, 4 to 10 reserved, and 11 mined.
+    fixture.provider_data.mine_and_commit_blocks(10, 1)?;
+
+    let data = &fixture.provider_data;
+    let parts = LocalBlockchainParts {
+        chain_id: data.blockchain.chain_id(),
+        hardfork: data.blockchain.hardfork(),
+        storage: data.blockchain.local_block_parts(),
+    };
+    assert!(!parts.storage.reservations.is_empty());
+
+    let restored: LocalBlockchain<L1BlockReceipt, _, L1LocalBlock, L1SignedTransaction> =
+        LocalBlockchain::from_parts(parts, &data.block_config)?;
+
+    let overrides = data.irregular_state.state_overrides();
+    for number in 0..=data.blockchain.last_block_number() {
+        // The state first: reading a reserved block creates it.
+        assert_eq!(
+            restored
+                .state_at_block_number(number, overrides)?
+                .state_root()?,
+            data.blockchain
+                .state_at_block_number(number, overrides)?
+                .state_root()?,
+            "block {number}"
+        );
+
+        let restored_block: Arc<<L1ChainSpec as edr_chain_spec_block::BlockChainSpec>::Block> =
+            restored.block_by_number(number)?.expect("block exists");
+        let original = data
+            .blockchain
+            .block_by_number(number)?
+            .expect("block exists");
+        assert_eq!(
+            restored_block.block_hash(),
+            original.block_hash(),
+            "block {number}"
+        );
+    }
+
+    Ok(())
+}

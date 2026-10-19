@@ -10,6 +10,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use auto_impl::auto_impl;
 use edr_block_api::BlockAndTotalDifficulty;
 use edr_block_header::BlockConfig;
+use edr_block_storage::ReservableSparseBlockStorageParts;
 use edr_primitives::{Address, HashSet, B256, U256};
 use edr_receipt::log::FilterLog;
 use edr_state_api::{DynState, StateDiff, StateOverride};
@@ -108,6 +109,16 @@ pub trait InsertBlock<BlockT: ?Sized, LocalBlockT, SignedTransactionT> {
     ) -> Result<BlockAndTotalDifficulty<Arc<BlockT>, SignedTransactionT>, Self::Error>;
 }
 
+/// Trait for exporting the locally created blocks of a blockchain.
+#[auto_impl(&)]
+pub trait LocalBlockParts<HardforkT, LocalBlockT> {
+    /// Retrieves the locally created blocks with their state diffs, and the
+    /// reservations, without creating reserved blocks.
+    ///
+    /// A forked blockchain only has the blocks created after the fork.
+    fn local_block_parts(&self) -> ReservableSparseBlockStorageParts<Arc<LocalBlockT>, HardforkT>;
+}
+
 /// Trait for retrieving the state diffs of locally mined blocks.
 #[auto_impl(&)]
 pub trait LocalStateDiffs {
@@ -200,6 +211,7 @@ pub trait Blockchain<
     + GetBlockchainBlock<BlockT, HardforkT, Error = BlockchainErrorT>
     + GetBlockchainLogs<Error = BlockchainErrorT>
     + InsertBlock<BlockT, LocalBlockT, SignedTransactionT, Error = BlockchainErrorT>
+    + LocalBlockParts<HardforkT, LocalBlockT>
     + LocalStateDiffs
     + ReceiptByTransactionHash<BlockReceiptT, Error = BlockchainErrorT>
     + ReserveBlocks<HardforkT, Error = BlockchainErrorT>
@@ -226,6 +238,7 @@ where
         + GetBlockchainBlock<BlockT, HardforkT, Error = BlockchainErrorT>
         + GetBlockchainLogs<Error = BlockchainErrorT>
         + InsertBlock<BlockT, LocalBlockT, SignedTransactionT, Error = BlockchainErrorT>
+        + LocalBlockParts<HardforkT, LocalBlockT>
         + LocalStateDiffs
         + ReceiptByTransactionHash<BlockReceiptT, Error = BlockchainErrorT>
         + ReserveBlocks<HardforkT, Error = BlockchainErrorT>

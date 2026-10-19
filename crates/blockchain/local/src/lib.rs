@@ -10,8 +10,8 @@ use edr_block_storage::{
 };
 use edr_blockchain_api::{
     utils::compute_state_at_block, BlockHashByNumber, BlockchainMetadata, GetBlockchainBlock,
-    GetBlockchainLogs, InsertBlock, LocalStateDiffs, ReceiptByTransactionHash, ReserveBlocks,
-    RevertToBlock, StateAtBlock, TotalDifficultyByBlockHash,
+    GetBlockchainLogs, InsertBlock, LocalBlockParts, LocalStateDiffs, ReceiptByTransactionHash,
+    ReserveBlocks, RevertToBlock, StateAtBlock, TotalDifficultyByBlockHash,
 };
 use edr_chain_spec::{EvmSpecId, ExecutableTransaction, ProtocolHardfork};
 use edr_primitives::{Address, HashSet, B256, U256};
@@ -412,6 +412,19 @@ impl<
         );
 
         Ok(())
+    }
+}
+
+impl<
+        BlockReceiptT: ReceiptTrait,
+        HardforkT: Clone,
+        LocalBlockT: Block<SignedTransactionT>,
+        SignedTransactionT,
+    > LocalBlockParts<HardforkT, LocalBlockT>
+    for LocalBlockchain<BlockReceiptT, HardforkT, LocalBlockT, SignedTransactionT>
+{
+    fn local_block_parts(&self) -> ReservableSparseBlockStorageParts<Arc<LocalBlockT>, HardforkT> {
+        self.storage.to_parts()
     }
 }
 
