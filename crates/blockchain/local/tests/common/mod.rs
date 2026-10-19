@@ -12,20 +12,30 @@ use edr_provider::spec::LocalBlockchainForChainSpec;
 use edr_state_api::StateDiff;
 
 pub fn create_dummy_local_blockchain() -> LocalBlockchainForChainSpec<L1ChainSpec> {
-    const DEFAULT_GAS_LIMIT: u64 = 0xffffffffffffff;
-    const DEFAULT_INITIAL_BASE_FEE: u128 = 1000000000;
+    create_local_blockchain_with_genesis_diff(StateDiff::default())
+}
 
+/// The block config of the blockchains created by this module.
+pub fn dummy_block_config() -> BlockConfig<edr_chain_l1::Hardfork> {
     let chain_config =
         l1_chain_config(L1_MAINNET_CHAIN_ID).expect("Chain config must exist for L1 mainnet");
 
-    let block_config = BlockConfig {
+    BlockConfig {
         base_fee_params: chain_config.base_fee_params.clone(),
         default_difficulty_fn: L1ChainSpec::default_block_difficulty,
         hardfork: edr_chain_l1::Hardfork::default(),
         scheduled_blob_params: chain_config.bpo_hardfork_schedule.clone(),
-    };
+    }
+}
 
-    let genesis_diff = StateDiff::default();
+pub fn create_local_blockchain_with_genesis_diff(
+    genesis_diff: StateDiff,
+) -> LocalBlockchainForChainSpec<L1ChainSpec> {
+    const DEFAULT_GAS_LIMIT: u64 = 0xffffffffffffff;
+    const DEFAULT_INITIAL_BASE_FEE: u128 = 1000000000;
+
+    let block_config = dummy_block_config();
+
     let genesis_block = L1ChainSpec::genesis_block(
         genesis_diff.clone(),
         &block_config,

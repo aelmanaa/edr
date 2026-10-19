@@ -8,7 +8,11 @@ mod sparse;
 use edr_primitives::B256;
 
 pub use self::{
-    contiguous::ContiguousBlockStorage, reservable::ReservableSparseBlockStorage,
+    contiguous::ContiguousBlockStorage,
+    reservable::{
+        FromPartsError, ReservableSparseBlockStorage, ReservableSparseBlockStorageParts,
+        ReservationParts, StoredBlockParts,
+    },
     sparse::SparseBlockStorage,
 };
 

@@ -5,7 +5,9 @@ use edr_block_api::{
     EmptyBlock, FetchBlockReceipts, LocalBlock,
 };
 use edr_block_header::BlockConfig;
-use edr_block_storage::ReservableSparseBlockStorage;
+use edr_block_storage::{
+    FromPartsError, ReservableSparseBlockStorage, ReservableSparseBlockStorageParts,
+};
 use edr_blockchain_api::{
     utils::compute_state_at_block, BlockHashByNumber, BlockchainMetadata, GetBlockchainBlock,
     GetBlockchainLogs, InsertBlock, LocalStateDiffs, ReceiptByTransactionHash, ReserveBlocks,
@@ -106,6 +108,60 @@ impl<
             .expect("Block must exist");
 
         Ok(local_block)
+    }
+}
+
+/// The contents of a [`LocalBlockchain`], from which an equal blockchain can
+/// be constructed with [`LocalBlockchain::from_parts`].
+#[derive(Clone, Debug)]
+pub struct LocalBlockchainParts<HardforkT, LocalBlockT> {
+    /// The chain ID.
+    pub chain_id: u64,
+    /// The hardfork.
+    pub hardfork: HardforkT,
+    /// The blocks, state diffs, and reservations.
+    pub storage: ReservableSparseBlockStorageParts<Arc<LocalBlockT>, HardforkT>,
+}
+
+impl<
+        BlockReceiptT: ReceiptTrait,
+        HardforkT: Clone,
+        LocalBlockT: Block<SignedTransactionT>,
+        SignedTransactionT,
+    > LocalBlockchain<BlockReceiptT, HardforkT, LocalBlockT, SignedTransactionT>
+{
+    /// Retrieves the contents of the blockchain, without creating reserved
+    /// blocks.
+    pub fn to_parts(&self) -> LocalBlockchainParts<HardforkT, LocalBlockT> {
+        LocalBlockchainParts {
+            chain_id: self.chain_id,
+            hardfork: self.hardfork.clone(),
+            storage: self.storage.to_parts(),
+        }
+    }
+}
+
+impl<
+        BlockReceiptT: ReceiptTrait,
+        HardforkT: Clone,
+        LocalBlockT: Block<SignedTransactionT> + LocalBlock<Arc<BlockReceiptT>>,
+        SignedTransactionT: ExecutableTransaction,
+    > LocalBlockchain<BlockReceiptT, HardforkT, LocalBlockT, SignedTransactionT>
+{
+    /// Constructs a blockchain from the parts returned by
+    /// [`LocalBlockchain::to_parts`].
+    ///
+    /// Reserved blocks use the provided block config, with the hardfork of
+    /// their reservation.
+    pub fn from_parts(
+        parts: LocalBlockchainParts<HardforkT, LocalBlockT>,
+        block_config: &BlockConfig<HardforkT>,
+    ) -> Result<Self, FromPartsError> {
+        Ok(Self {
+            chain_id: parts.chain_id,
+            hardfork: parts.hardfork,
+            storage: ReservableSparseBlockStorage::from_parts(parts.storage, block_config)?,
+        })
     }
 }
 

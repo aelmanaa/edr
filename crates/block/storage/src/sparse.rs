@@ -159,6 +159,11 @@ impl<BlockReceiptT: ReceiptTrait, BlockT, SignedTransactionT>
         self.transaction_hash_to_block.get(transaction_hash)
     }
 
+    /// Retrieves the stored blocks, in no particular order.
+    pub fn blocks(&self) -> impl Iterator<Item = &BlockT> {
+        self.number_to_block.values()
+    }
+
     /// Retrieves whether a block with the provided number exists.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
     pub fn contains_block_number(&self, block_number: u64) -> bool {
