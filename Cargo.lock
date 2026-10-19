@@ -3797,8 +3797,12 @@ dependencies = [
 name = "edr_state_dump"
 version = "0.3.8"
 dependencies = [
+ "anyhow",
  "edr_primitives",
+ "edr_state_api",
+ "edr_state_persistent_trie",
  "flate2",
+ "proptest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

@@ -6,6 +6,8 @@
 //! transactions, are ignored when decoding.
 #![warn(missing_docs)]
 
+pub mod history;
+
 use std::{collections::BTreeMap, io::Read as _};
 
 use edr_primitives::{Address, Bytes, B256, U256};

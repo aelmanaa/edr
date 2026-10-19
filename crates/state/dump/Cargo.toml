@@ -5,10 +5,16 @@ edition.workspace = true
 
 [dependencies]
 edr_primitives.workspace = true
+edr_state_api.workspace = true
 flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+edr_state_persistent_trie.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true
