@@ -330,6 +330,8 @@ pub(crate) fn op_next_base_fee(
 }
 
 impl ProviderChainSpec for OpChainSpec {
+    const CHAIN_TYPE: &'static str = crate::CHAIN_TYPE;
+
     fn chain_configs() -> &'static HashMap<u64, ChainConfig<Self::ProtocolHardfork>> {
         op_chain_configs()
     }
@@ -411,8 +413,6 @@ impl<TimerT: Clone + TimeSinceEpoch> ProviderSpec<TimerT> for OpChainSpec {
 }
 
 impl<TimerT: Clone + TimeSinceEpoch> SyncNapiSpec<TimerT> for OpChainSpec {
-    const CHAIN_TYPE: &'static str = crate::CHAIN_TYPE;
-
     fn cast_response(
         response: Result<ResponseWithCallTraces, ProviderErrorForChainSpec<Self>>,
     ) -> napi::Result<edr_napi_core::spec::Response> {
@@ -706,5 +706,14 @@ mod tests {
             assert_eq!(result, expected);
             assert!(result > min_base_fee);
         }
+    }
+
+    #[test]
+    fn chain_types_identify_the_chain() {
+        assert_eq!(<OpChainSpec as ProviderChainSpec>::CHAIN_TYPE, "op");
+        assert_eq!(
+            <edr_chain_l1::L1ChainSpec as ProviderChainSpec>::CHAIN_TYPE,
+            "L1"
+        );
     }
 }

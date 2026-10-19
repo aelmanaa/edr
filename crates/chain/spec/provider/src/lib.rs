@@ -41,6 +41,9 @@ pub trait ProviderChainSpec: BlockChainSpec<
         >,
     >
 {
+    /// The string type identifier of the chain, for example `"L1"`.
+    const CHAIN_TYPE: &'static str;
+
     /// Returns the chain configurations for this chain type.
     fn chain_configs() -> &'static HashMap<u64, ChainConfig<Self::ProtocolHardfork>>;
 

@@ -51,9 +51,6 @@ pub trait SyncNapiSpec<TimerT: Clone + TimeSinceEpoch>:
                            + TransactionValidation<ValidationError: PartialEq>,
 >
 {
-    /// The string type identifier of the chain.
-    const CHAIN_TYPE: &'static str;
-
     /// Casts a response with traces into a `Response`.
     ///
     /// This is implemented as an associated function to avoid problems when
@@ -128,8 +125,6 @@ pub fn cast_provider_result_to_response<
 }
 
 impl<TimerT: Clone + TimeSinceEpoch> SyncNapiSpec<TimerT> for L1ChainSpec {
-    const CHAIN_TYPE: &'static str = edr_chain_l1::CHAIN_TYPE;
-
     fn cast_response(
         response: Result<ResponseWithCallTraces, ProviderErrorForChainSpec<Self>>,
     ) -> napi::Result<Response> {
@@ -138,8 +133,6 @@ impl<TimerT: Clone + TimeSinceEpoch> SyncNapiSpec<TimerT> for L1ChainSpec {
 }
 
 impl<TimerT: Clone + TimeSinceEpoch> SyncNapiSpec<TimerT> for GenericChainSpec {
-    const CHAIN_TYPE: &'static str = edr_generic::CHAIN_TYPE;
-
     fn cast_response(
         response: Result<ResponseWithCallTraces, ProviderErrorForChainSpec<Self>>,
     ) -> napi::Result<Response> {

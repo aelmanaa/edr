@@ -224,6 +224,8 @@ impl ProtocolHardforkChainSpec for L1ChainSpec {
 }
 
 impl ProviderChainSpec for L1ChainSpec {
+    const CHAIN_TYPE: &'static str = crate::CHAIN_TYPE;
+
     fn chain_configs() -> &'static HashMap<u64, ChainConfig<Self::ProtocolHardfork>> {
         l1_chain_configs()
     }
