@@ -2617,6 +2617,7 @@ dependencies = [
  "edr_eip7892",
  "edr_primitives",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

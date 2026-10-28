@@ -24,7 +24,6 @@ pub use self::overrides::HeaderOverrides;
     Default,
     PartialEq,
     Eq,
-    alloy_rlp::RlpDecodable,
     alloy_rlp::RlpEncodable,
     serde::Deserialize,
     serde::Serialize,
@@ -69,7 +68,7 @@ pub struct BlockHeader {
     /// headers.
     pub withdrawals_root: Option<B256>,
     /// Blob gas was added by EIP-4844 and is ignored in older headers.
-    #[serde(flatten)]
+    #[serde(flatten, with = "blob_gas_serde")]
     pub blob_gas: Option<BlobGas>,
     /// The hash tree root of the parent beacon block for the given execution
     /// block (EIP-4788).
@@ -89,6 +88,128 @@ pub struct BlockHeader {
     /// [EIP-7843](https://eips.ethereum.org/EIPS/eip-7843)
     #[serde(default, with = "alloy_serde::quantity::opt")]
     pub slot_number: Option<u64>,
+}
+
+// Decoded by hand, the way alloy's `Header` is. The decoder derived with
+// `#[rlp(trailing)]` reads a leading `0x80` in an optional field as a `None`
+// placeholder, but `0x80` is also the encoding of zero: it decoded a zero base
+// fee or slot number as `None` and, because blob gas is two RLP items, a zero
+// blob gas as `None` with every later field shifted by one.
+impl alloy_rlp::Decodable for BlockHeader {
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let alloy_rlp::Header {
+            list,
+            payload_length,
+        } = alloy_rlp::Header::decode(buf)?;
+        if !list {
+            return Err(alloy_rlp::Error::UnexpectedString);
+        }
+
+        let started_len = buf.len();
+        // The length of `buf` once the list's payload has been consumed.
+        let end_len = started_len
+            .checked_sub(payload_length)
+            .ok_or(alloy_rlp::Error::InputTooShort)?;
+
+        let this = Self {
+            parent_hash: B256::decode(buf)?,
+            ommers_hash: B256::decode(buf)?,
+            beneficiary: Address::decode(buf)?,
+            state_root: B256::decode(buf)?,
+            transactions_root: B256::decode(buf)?,
+            receipts_root: B256::decode(buf)?,
+            logs_bloom: Bloom::decode(buf)?,
+            difficulty: U256::decode(buf)?,
+            number: u64::decode(buf)?,
+            gas_limit: u64::decode(buf)?,
+            gas_used: u64::decode(buf)?,
+            timestamp: u64::decode(buf)?,
+            extra_data: Bytes::decode(buf)?,
+            mix_hash: B256::decode(buf)?,
+            nonce: B64::decode(buf)?,
+            base_fee_per_gas: decode_trailing(buf, end_len)?,
+            withdrawals_root: decode_trailing_hash(buf, end_len)?,
+            blob_gas: decode_trailing(buf, end_len)?,
+            parent_beacon_block_root: decode_trailing_hash(buf, end_len)?,
+            requests_hash: decode_trailing_hash(buf, end_len)?,
+            block_access_list_hash: decode_trailing_hash(buf, end_len)?,
+            slot_number: decode_trailing(buf, end_len)?,
+        };
+
+        let consumed = started_len - buf.len();
+        if consumed != payload_length {
+            return Err(alloy_rlp::Error::ListLengthMismatch {
+                expected: payload_length,
+                got: consumed,
+            });
+        }
+
+        Ok(this)
+    }
+}
+
+/// Decodes an optional trailing field of a header, which is present if the
+/// list's payload has not been consumed yet. A `0x80` is the encoding of zero.
+fn decode_trailing<T: alloy_rlp::Decodable>(
+    buf: &mut &[u8],
+    end_len: usize,
+) -> alloy_rlp::Result<Option<T>> {
+    if buf.len() > end_len {
+        T::decode(buf).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+/// Decodes an optional trailing hash of a header. A hash is never encoded as
+/// `0x80`, so a `0x80` is the placeholder that the encoder writes for a `None`
+/// followed by a present field.
+fn decode_trailing_hash(buf: &mut &[u8], end_len: usize) -> alloy_rlp::Result<Option<B256>> {
+    if buf.len() > end_len && buf.first() == Some(&alloy_rlp::EMPTY_STRING_CODE) {
+        alloy_rlp::Buf::advance(buf, 1);
+        Ok(None)
+    } else {
+        decode_trailing(buf, end_len)
+    }
+}
+
+/// Serializes [`BlockHeader::blob_gas`] as the JSON-RPC block's
+/// `blobGasUsed` and `excessBlobGas`. Flattening [`BlobGas`] itself would
+/// write its `gas_used` as `gasUsed`, the name of [`BlockHeader::gas_used`].
+mod blob_gas_serde {
+    use edr_eip4844::BlobGas;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct HeaderBlobGas {
+        blob_gas_used: u64,
+        excess_blob_gas: u64,
+    }
+
+    pub fn serialize<SerializerT: Serializer>(
+        blob_gas: &Option<BlobGas>,
+        serializer: SerializerT,
+    ) -> Result<SerializerT::Ok, SerializerT::Error> {
+        blob_gas
+            .as_ref()
+            .map(|blob_gas| HeaderBlobGas {
+                blob_gas_used: blob_gas.gas_used,
+                excess_blob_gas: blob_gas.excess_gas,
+            })
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, DeserializerT: Deserializer<'de>>(
+        deserializer: DeserializerT,
+    ) -> Result<Option<BlobGas>, DeserializerT::Error> {
+        let blob_gas = Option::<HeaderBlobGas>::deserialize(deserializer)?;
+
+        Ok(blob_gas.map(|blob_gas| BlobGas {
+            gas_used: blob_gas.blob_gas_used,
+            excess_gas: blob_gas.excess_blob_gas,
+        }))
+    }
 }
 
 impl BlockHeader {
@@ -777,9 +898,9 @@ mod tests {
             withdrawals_root: None,
             blob_gas: None,
             parent_beacon_block_root: None,
-            requests_hash: Some(B256::random()),
-            block_access_list_hash: Some(B256::random()),
-            slot_number: Some(1337),
+            requests_hash: None,
+            block_access_list_hash: None,
+            slot_number: None,
         };
 
         let encoded = alloy_rlp::encode(&header);
@@ -787,6 +908,20 @@ mod tests {
         assert_eq!(header, decoded);
 
         header.base_fee_per_gas = Some(12345);
+
+        let encoded = alloy_rlp::encode(&header);
+        let decoded = BlockHeader::decode(&mut encoded.as_slice()).unwrap();
+        assert_eq!(header, decoded);
+
+        // A missing hash between present fields is encoded as a `0x80`
+        // placeholder, which no hash decodes from.
+        header.blob_gas = Some(BlobGas {
+            gas_used: 0,
+            excess_gas: 0,
+        });
+        header.requests_hash = Some(B256::random());
+        header.block_access_list_hash = Some(B256::random());
+        header.slot_number = Some(1337);
 
         let encoded = alloy_rlp::encode(&header);
         let decoded = BlockHeader::decode(&mut encoded.as_slice()).unwrap();
@@ -1019,6 +1154,197 @@ mod tests {
         let encoded = alloy_rlp::encode(&header);
         assert_eq!(encoded, expected_encoding);
         assert_eq!(header.hash(), expected_hash);
+    }
+
+    /// A header of the latest hardfork, with every optional field set.
+    fn amsterdam_header(blob_gas: BlobGas, base_fee: u128, slot_number: u64) -> BlockHeader {
+        BlockHeader {
+            parent_hash: B256::repeat_byte(0x01),
+            ommers_hash: KECCAK_RLP_EMPTY_ARRAY,
+            beneficiary: Address::repeat_byte(0x02),
+            state_root: B256::repeat_byte(0x03),
+            transactions_root: B256::repeat_byte(0x04),
+            receipts_root: B256::repeat_byte(0x05),
+            logs_bloom: Bloom::ZERO,
+            difficulty: U256::ZERO,
+            number: 42,
+            gas_limit: 30_000_000,
+            gas_used: 21_000,
+            timestamp: 1_700_000_000,
+            extra_data: Bytes::default(),
+            mix_hash: B256::repeat_byte(0x06),
+            nonce: B64::ZERO,
+            base_fee_per_gas: Some(base_fee),
+            withdrawals_root: Some(KECCAK_NULL_RLP),
+            blob_gas: Some(blob_gas),
+            parent_beacon_block_root: Some(B256::repeat_byte(0x07)),
+            requests_hash: Some(B256::repeat_byte(0x08)),
+            block_access_list_hash: Some(B256::repeat_byte(0x09)),
+            slot_number: Some(slot_number),
+        }
+    }
+
+    fn assert_rlp_roundtrip(header: &BlockHeader) {
+        let encoded = alloy_rlp::encode(header);
+        let decoded = BlockHeader::decode(&mut encoded.as_slice()).unwrap();
+        assert_eq!(*header, decoded);
+        assert_eq!(header.hash(), decoded.hash());
+    }
+
+    #[test]
+    fn header_rlp_roundtrip_with_zero_blob_gas() {
+        // Every block without blobs, below the blob target, has zero blob gas.
+        let header = amsterdam_header(
+            BlobGas {
+                gas_used: 0,
+                excess_gas: 0,
+            },
+            7,
+            1,
+        );
+        assert_rlp_roundtrip(&header);
+    }
+
+    #[test]
+    fn header_rlp_roundtrip_with_non_zero_blob_gas() {
+        let header = amsterdam_header(
+            BlobGas {
+                gas_used: 0x20000,
+                excess_gas: 0x40000,
+            },
+            7,
+            1,
+        );
+        assert_rlp_roundtrip(&header);
+    }
+
+    #[test]
+    fn header_rlp_roundtrip_with_only_one_zero_blob_gas_field() {
+        assert_rlp_roundtrip(&amsterdam_header(
+            BlobGas {
+                gas_used: 0,
+                excess_gas: 0x40000,
+            },
+            7,
+            1,
+        ));
+        assert_rlp_roundtrip(&amsterdam_header(
+            BlobGas {
+                gas_used: 0x20000,
+                excess_gas: 0,
+            },
+            7,
+            1,
+        ));
+    }
+
+    #[test]
+    fn header_rlp_roundtrip_with_zero_base_fee_and_slot_number() {
+        // A zero base fee is a supported configuration, and the first Amsterdam
+        // block after a pre-Amsterdam parent has slot number zero.
+        let header = amsterdam_header(
+            BlobGas {
+                gas_used: 0x20000,
+                excess_gas: 0x40000,
+            },
+            0,
+            0,
+        );
+        assert_rlp_roundtrip(&header);
+    }
+
+    #[test]
+    fn header_rlp_roundtrip_cancun_with_zero_blob_gas() {
+        let header = BlockHeader {
+            requests_hash: None,
+            block_access_list_hash: None,
+            slot_number: None,
+            ..amsterdam_header(
+                BlobGas {
+                    gas_used: 0,
+                    excess_gas: 0,
+                },
+                7,
+                0,
+            )
+        };
+        assert_rlp_roundtrip(&header);
+    }
+
+    // Same test vector as `block_header_rlp_encoding_prague`: a real Prague header
+    // with zero blob gas.
+    #[test]
+    fn block_header_rlp_decoding_prague() {
+        let encoding = hex::decode("f90264a088867a8da7be57bcf8c17c2f19ddcd741aaca7236e21514efd3fce07f0e59c7da01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa028b2411b8b56e872f6190379dcfcdcb73f835f67b0493e57b5587c53d3eeea50a091b7a6c2330ca44ce3895fd67915587a8900f8e807abec5ff5e299909d689162a0ccd78acb4b8076325dc580c8c1204c9361e2386a9aaaee95bb0acaa1c099fad0b90100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008001887fffffffffffffff830143a882079e42a000000000000000000000000000000000000000000000000000000000000200008800000000000000008403a699d0a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b4218080a00000000000000000000000000000000000000000000000000000000000000000a0e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855").unwrap();
+        let expected_hash =
+            B256::from_str("0xedaa151aff70c6ade40b90453841da58be2ca16a1c908874510601f8236e1c47")
+                .unwrap();
+
+        let decoded = BlockHeader::decode(&mut encoding.as_slice()).unwrap();
+
+        assert_eq!(
+            decoded.blob_gas,
+            Some(BlobGas {
+                gas_used: 0,
+                excess_gas: 0,
+            })
+        );
+        assert_eq!(decoded.parent_beacon_block_root, Some(B256::ZERO));
+        assert_eq!(
+            decoded.requests_hash,
+            Some(
+                B256::from_str(
+                    "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                )
+                .unwrap()
+            )
+        );
+        assert_eq!(decoded.hash(), expected_hash);
+    }
+
+    #[test]
+    fn header_json_roundtrip() {
+        for blob_gas in [
+            BlobGas {
+                gas_used: 0,
+                excess_gas: 0,
+            },
+            BlobGas {
+                gas_used: 0x20000,
+                excess_gas: 0x40000,
+            },
+        ] {
+            let header = amsterdam_header(blob_gas, 7, 1);
+            let json = serde_json::to_string(&header).unwrap();
+            let decoded: BlockHeader = serde_json::from_str(&json).unwrap();
+            assert_eq!(header, decoded);
+        }
+
+        let header = BlockHeader {
+            blob_gas: None,
+            ..amsterdam_header(BlobGas::default(), 7, 1)
+        };
+        let json = serde_json::to_string(&header).unwrap();
+        let decoded: BlockHeader = serde_json::from_str(&json).unwrap();
+        assert_eq!(header, decoded);
+    }
+
+    #[test]
+    fn header_json_names_blob_gas_fields_like_the_rpc_block() {
+        let header = amsterdam_header(
+            BlobGas {
+                gas_used: 0x20000,
+                excess_gas: 0x40000,
+            },
+            7,
+            1,
+        );
+        let json = serde_json::to_value(&header).unwrap();
+
+        assert_eq!(json["gasUsed"], 21_000);
+        assert_eq!(json["blobGasUsed"], 0x20000);
+        assert_eq!(json["excessBlobGas"], 0x40000);
+        assert!(json.get("excessGas").is_none());
     }
 
     fn to_timestamp(time: SystemTime) -> u64 {
